@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSERC Grants Explorer</title>
+
+    <!-- Tailwind CSS for Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- PapaParse for robust CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        /* Custom scrollbar for the table */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        .dragover {
+            background-color: #f0fdf4 !important;
+            border-color: #22c55e !important;
+        }
+
+        /* Prevent text wrapping in standard table cells for cleaner look, allow in summary */
+        td {
+            white-space: nowrap;
+        }
+
+        td.wrap-text {
+            white-space: normal;
+            min-width: 300px;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                    class="text-blue-600">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <path d="M8 13h2" />
+                    <path d="M8 17h2" />
+                    <path d="M14 13h2" />
+                    <path d="M14 17h2" />
+                </svg>
+                <h1 class="text-xl font-bold text-slate-800 tracking-tight">NSERC Grants Explorer</h1>
+            </div>
+            <a href="https://open.canada.ca/data/en/dataset/c1b0f627-8c29-427c-ab73-33968ad9176e?res_page=11#resources"
+                target="_blank" rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200 font-medium text-sm"
+                onclick="event.stopPropagation()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Download NSERC Datasets
+            </a>
+            <div id="currentFileBadge"
+                class="hidden text-sm font-medium px-3 py-1 bg-blue-100 text-blue-800 rounded-full max-w-xs truncate"
+                title="Loaded files">
+                No file loaded
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-6">
+
+        <!-- Error/Notice Banner -->
+        <div id="noticeBanner" class="hidden rounded-md bg-yellow-50 p-4 border border-yellow-200">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                            clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-yellow-800" id="noticeMessage">Notice</h3>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dropzone / Upload Area -->
+        <div id="dropzone"
+            class="border-2 border-dashed border-slate-300 rounded-xl bg-white p-12 text-center transition-all cursor-pointer hover:bg-slate-50 hover:border-blue-400 shadow-sm flex flex-col items-center justify-center min-h-[300px]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-slate-400 mb-4" fill="none"
+                viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <h2 class="text-2xl font-semibold text-slate-700 mb-2">Drag & Drop your NSERC Grants CSV file(s) here</h2>
+            <p class="text-slate-500 mb-6">Or click to browse from your computer. You can select multiple files.</p>
+            <p class="text-sm text-slate-400 max-w-md mb-6">Will automatically attempt to load recent NSERC Grants
+                CSVs if present in the same directory (requires local web server).</p>
+
+            <a href="https://open.canada.ca/data/en/dataset/c1b0f627-8c29-427c-ab73-33968ad9176e?res_page=11#resources"
+                target="_blank" rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200 font-medium text-sm"
+                onclick="event.stopPropagation()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Download NSERC Datasets
+            </a>
+
+            <input type="file" id="fileInput" class="hidden" accept=".csv" multiple>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loading" class="hidden flex flex-col items-center justify-center p-12">
+            <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none"
+                viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+            </svg>
+            <p class="mt-4 text-slate-600 font-medium" id="loadingText">Processing data...</p>
+        </div>
+
+        <!-- Workspace (Hidden until data is loaded) -->
+        <div id="workspace" class="hidden flex flex-col gap-6">
+
+            <!-- Dashboard Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <div class="text-sm font-medium text-slate-500 mb-1">Total Records</div>
+                    <div class="text-3xl font-bold text-slate-800" id="statRecords">0</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <div class="text-sm font-medium text-slate-500 mb-1">Total Funding (Estimated)</div>
+                    <div class="text-3xl font-bold text-emerald-600" id="statFunding">$0</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <div class="text-sm font-medium text-slate-500 mb-1">Unique Institutions</div>
+                    <div class="text-3xl font-bold text-blue-600" id="statInstitutions">0</div>
+                </div>
+            </div>
+
+            <!-- Controls (Search & Info) -->
+            <div
+                class="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <div class="relative w-full sm:w-96">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <input type="text" id="searchInput"
+                        class="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition"
+                        placeholder="Search across all columns...">
+                </div>
+                <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <div class="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button id="btnLangEN"
+                            class="px-3 py-1 rounded-md bg-white shadow-sm text-sm font-medium text-slate-800 transition-all">EN</button>
+                        <button id="btnLangFR"
+                            class="px-3 py-1 rounded-md text-sm font-medium text-slate-500 hover:text-slate-700 transition-all">FR</button>
+                    </div>
+                    <div class="text-sm text-slate-500">
+                        Showing <span id="pageInfo" class="font-medium text-slate-800">0 - 0</span> of <span
+                            id="totalInfo" class="font-medium text-slate-800">0</span> results
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Display (Cards) -->
+            <div id="cardContainer" class="flex flex-col gap-6">
+                <!-- Cards injected by JS -->
+            </div>
+
+            <!-- Pagination -->
+            <div
+                class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 flex items-center justify-between sm:px-6">
+                <button id="btnPrev"
+                    class="relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    Previous
+                </button>
+                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-center">
+                    <span class="text-sm text-slate-700">
+                        Page <span id="currentPageNum" class="font-medium">1</span> of <span id="totalPagesNum"
+                            class="font-medium">1</span>
+                    </span>
+                </div>
+                <button id="btnNext"
+                    class="relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    Next
+                </button>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // State Management
+        let appState = {
+            data: [],           // Array of objects (parsed CSV)
+            filteredData: [],   // Array of objects after search
+            headers: [],        // Array of column names
+            currentPage: 1,
+            rowsPerPage: 50,
+            fileName: '',
+            language: 'EN'      // Current display language
+        };
+
+        // Primary headers to always show first. Checked against the lowercase raw CSV header name.
+        const primaryKeys = [
+            'name-nom', 'department', 'institution', 'province',
+            'awardamount', 'fiscalyear', 'competitionyear',
+            'programname', 'applicationtitle'
+        ];
+
+        // DOM Elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const workspace = document.getElementById('workspace');
+        const loading = document.getElementById('loading');
+        const searchInput = document.getElementById('searchInput');
+        const currentFileBadge = document.getElementById('currentFileBadge');
+        const noticeBanner = document.getElementById('noticeBanner');
+        const noticeMessage = document.getElementById('noticeMessage');
+        const cardContainer = document.getElementById('cardContainer');
+
+        // Initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            attemptAutoLoad();
+        });
+
+        // Setup all event listeners
+        function setupEventListeners() {
+            // Drag and drop events
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.add('dragover'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.remove('dragover'), false);
+            });
+
+            dropzone.addEventListener('drop', handleDrop, false);
+            dropzone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // Search event with a small debounce
+            let searchTimeout;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    handleSearch(e.target.value);
+                }, 300);
+            });
+
+            // Pagination events
+            document.getElementById('btnPrev').addEventListener('click', () => {
+                if (appState.currentPage > 1) {
+                    appState.currentPage--;
+                    renderCards();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            });
+
+            document.getElementById('btnNext').addEventListener('click', () => {
+                const maxPage = Math.ceil(appState.filteredData.length / appState.rowsPerPage);
+                if (appState.currentPage < maxPage) {
+                    appState.currentPage++;
+                    renderCards();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            });
+
+            // Language Toggle events
+            document.getElementById('btnLangEN').addEventListener('click', () => setLanguage('EN'));
+            document.getElementById('btnLangFR').addEventListener('click', () => setLanguage('FR'));
+
+            // Expand/Collapse card event delegation
+            cardContainer.addEventListener('click', (e) => {
+                const toggleBtn = e.target.closest('.toggle-expand-btn');
+                if (toggleBtn) {
+                    const card = toggleBtn.closest('.card-wrapper');
+                    const expandedSection = card.querySelector('.expanded-section');
+                    if (expandedSection.classList.contains('hidden')) {
+                        expandedSection.classList.remove('hidden');
+                        toggleBtn.innerHTML = 'Show Less &uarr;';
+                    } else {
+                        expandedSection.classList.add('hidden');
+                        toggleBtn.innerHTML = 'Show More &darr;';
+                    }
+                }
+            });
+        }
+
+        function setLanguage(lang) {
+            appState.language = lang;
+
+            // Update button styles
+            const btnEN = document.getElementById('btnLangEN');
+            const btnFR = document.getElementById('btnLangFR');
+
+            if (lang === 'EN') {
+                btnEN.className = 'px-3 py-1 rounded-md bg-white shadow-sm text-sm font-medium text-slate-800 transition-all';
+                btnFR.className = 'px-3 py-1 rounded-md text-sm font-medium text-slate-500 hover:text-slate-700 transition-all';
+            } else {
+                btnFR.className = 'px-3 py-1 rounded-md bg-white shadow-sm text-sm font-medium text-slate-800 transition-all';
+                btnEN.className = 'px-3 py-1 rounded-md text-sm font-medium text-slate-500 hover:text-slate-700 transition-all';
+            }
+
+            renderCards();
+        }
+
+        // Try to fetch multiple known files automatically
+        async function attemptAutoLoad() {
+            // If viewing via file:// protocol, fetch will fail due to CORS.
+            if (window.location.protocol === 'file:') {
+                showNotice("You are viewing this file directly from your computer (file://). Auto-loading CSVs is blocked by your browser's security. Please drag and drop the CSV files instead.");
+                return;
+            }
+
+            // List of potential file names to look for
+            const potentialFiles = [
+                'NSERC_FY2025_Expenditures.csv',
+                'NSERC_FY2024_Expenditures.csv',
+                'NSERC_FY2023_Expenditures.csv',
+                'NSERC_FY2022_Expenditures.csv',
+                'NSERC_FY2021_Expenditures.csv',
+                'NSERC_FY2020_Expenditures.csv'
+            ];
+
+            let allData = [];
+            let allHeaders = new Set();
+            let loadedFilesCount = 0;
+
+            showLoading("Searching for local CSV files...");
+
+            for (const fileName of potentialFiles) {
+                try {
+                    const response = await fetch(fileName, { method: 'HEAD' });
+                    if (response.ok) {
+                        showLoading(`Downloading ${fileName}...`);
+                        const parsedResult = await parseCSVAsync(fileName, true);
+                        if (parsedResult.data && parsedResult.data.length > 0) {
+                            allData = allData.concat(parsedResult.data);
+                            parsedResult.meta.fields.forEach(f => allHeaders.add(f));
+                            loadedFilesCount++;
+                        }
+                    }
+                } catch (error) {
+                    // Ignore: file likely doesn't exist or CORS blocked it
+                }
+            }
+
+            if (loadedFilesCount > 0) {
+                const displayName = loadedFilesCount === 1 ? "Auto-loaded 1 file" : `Auto-loaded ${loadedFilesCount} files`;
+                processData(allData, Array.from(allHeaders), displayName);
+            } else {
+                hideLoading();
+            }
+        }
+
+        // Handle file drop (now supports multiple)
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            if (dt.files.length) handleFilesBatch(dt.files);
+        }
+
+        // Handle file selection from click (now supports multiple)
+        function handleFileSelect(e) {
+            if (e.target.files.length) handleFilesBatch(e.target.files);
+        }
+
+        // Helper to parse a single CSV wrapped in a Promise
+        function parseCSVAsync(fileOrUrl, isUrl = false) {
+            return new Promise((resolve, reject) => {
+                Papa.parse(fileOrUrl, {
+                    download: isUrl,
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: resolve,
+                    error: reject
+                });
+            });
+        }
+
+        // Read and parse multiple selected files
+        async function handleFilesBatch(files) {
+            const validFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+
+            if (validFiles.length === 0) {
+                showNotice("Please upload valid CSV file(s).");
+                return;
+            }
+
+            showNotice(false); // Hide notice
+            showLoading(`Parsing ${validFiles.length} file(s)...`);
+
+            let allData = [];
+            let allHeaders = new Set();
+            let loadedNames = [];
+
+            for (const file of validFiles) {
+                try {
+                    const parsedResult = await parseCSVAsync(file, false);
+                    if (parsedResult.data && parsedResult.data.length > 0) {
+                        allData = allData.concat(parsedResult.data);
+                        // Using a Set ensures we capture headers even if files have slightly different columns
+                        parsedResult.meta.fields.forEach(f => allHeaders.add(f));
+                        loadedNames.push(file.name);
+                    }
+                } catch (err) {
+                    console.error(`Error parsing ${file.name}:`, err);
+                }
+            }
+
+            if (allData.length > 0) {
+                const displayName = loadedNames.length > 2
+                    ? `Loaded ${loadedNames.length} files`
+                    : loadedNames.join(', ');
+                processData(allData, Array.from(allHeaders), displayName);
+            } else {
+                hideLoading();
+                showNotice("No readable data could be extracted from the uploaded files.");
+            }
+        }
+
+        // Process parsed data and initialize UI
+        function processData(data, headers, fileName) {
+            appState.data = data;
+            appState.filteredData = data;
+            appState.headers = headers;
+            appState.fileName = fileName;
+            appState.currentPage = 1;
+
+            // Update UI State
+            currentFileBadge.textContent = fileName;
+            currentFileBadge.title = fileName; // Show full text on hover if truncated
+            currentFileBadge.classList.remove('hidden');
+            dropzone.classList.add('hidden');
+            workspace.classList.remove('hidden');
+            searchInput.value = ''; // Reset search
+
+            updateDashboard();
+            renderCards();
+            hideLoading();
+        }
+
+        // Filter data based on search input
+        function handleSearch(query) {
+            query = query.toLowerCase().trim();
+            if (!query) {
+                appState.filteredData = appState.data;
+            } else {
+                appState.filteredData = appState.data.filter(row => {
+                    // Search across all values in the row
+                    return Object.values(row).some(val =>
+                        String(val).toLowerCase().includes(query)
+                    );
+                });
+            }
+            appState.currentPage = 1; // Reset to first page
+            updateDashboard();
+            renderCards();
+        }
+
+        // Calculate and display summary statistics
+        function updateDashboard() {
+            const data = appState.filteredData;
+
+            // 1. Total Records
+            document.getElementById('statRecords').textContent = data.length.toLocaleString();
+
+            // 2. Total Funding (Look for 'AwardAmount' or similar)
+            let totalFunding = 0;
+            const amountCol = appState.headers.find(h => h.toLowerCase().includes('amount') || h.toLowerCase().includes('award'));
+
+            // 3. Unique Institutions (Look for 'Institution' or 'Organization')
+            const instSet = new Set();
+            const instCol = appState.headers.find(h => h.toLowerCase().includes('institution') || h.toLowerCase().includes('établissement'));
+
+            data.forEach(row => {
+                // Sum Funding
+                if (amountCol && row[amountCol]) {
+                    // Remove currency symbols, commas, spaces before parsing
+                    const cleanNum = String(row[amountCol]).replace(/[^0-9.-]+/g, "");
+                    const val = parseFloat(cleanNum);
+                    if (!isNaN(val)) totalFunding += val;
+                }
+                // Count Institutions
+                if (instCol && row[instCol]) {
+                    instSet.add(row[instCol].trim());
+                }
+            });
+ 
+            // Format Currency
+            const formatter = new Intl.NumberFormat('en-CA', {
+                style: 'currency',
+                currency: 'CAD',
+                maximumFractionDigits: 0
+            });
+
+            document.getElementById('statFunding').textContent = amountCol ? formatter.format(totalFunding) : "N/A";
+            document.getElementById('statInstitutions').textContent = instCol ? instSet.size.toLocaleString() : "N/A";
+        }
+
+        // Render current page of the cards
+        function renderCards() {
+            const data = appState.filteredData;
+
+            // Pagination logic
+            const totalRows = data.length;
+            const totalPages = Math.ceil(totalRows / appState.rowsPerPage) || 1;
+
+            // Safety check for current page
+            if (appState.currentPage > totalPages) appState.currentPage = totalPages;
+
+            const startIdx = (appState.currentPage - 1) * appState.rowsPerPage;
+            const endIdx = Math.min(startIdx + appState.rowsPerPage, totalRows);
+
+            const pageData = data.slice(startIdx, endIdx);
+
+            let html = '';
+            if (pageData.length === 0) {
+                html = `<div class="p-8 text-center text-slate-500 bg-white rounded-xl border border-slate-200">No matching records found.</div>`;
+            } else {
+                // Filter headers based on language
+                const activeHeaders = appState.headers.filter(header => {
+                    if (appState.language === 'EN') return !header.endsWith('FR');
+                    if (appState.language === 'FR') return !header.endsWith('EN');
+                    return true;
+                });
+
+                pageData.forEach(row => {
+                    let mainFieldsHtml = '';
+                    let expandedFieldsHtml = '';
+
+                    activeHeaders.forEach(header => {
+                        let cellValue = row[header] !== undefined ? row[header] : '';
+
+                        // Skip rendering empty fields
+                        if (!cellValue && cellValue !== 0) return;
+
+                        let formattedHeader = formatHeaderName(header, appState.language);
+                        let displayValue = formatCellValue(header, cellValue);
+
+                        // Apply full width for long descriptive columns or values
+                        let isLongTextCol = header.toLowerCase().includes('summary') || header.toLowerCase().includes('title') || String(cellValue).length > 100;
+                        let colSpanClass = isLongTextCol ? 'col-span-1 md:col-span-2 lg:col-span-3' : '';
+
+                        let fieldHtml = `
+                            <div class="flex flex-col ${colSpanClass}">
+                                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">${escapeHTML(formattedHeader)}</span>
+                                <span class="text-sm text-slate-800 break-words">${escapeHTML(displayValue)}</span>
+                            </div>
+                        `;
+
+                        // Decide if this field belongs in the main view or expanded view
+                        const isPrimary = primaryKeys.some(key => header.toLowerCase().includes(key));
+
+                        if (isPrimary) {
+                            mainFieldsHtml += fieldHtml;
+                        } else {
+                            expandedFieldsHtml += fieldHtml;
+                        }
+                    });
+
+                    html += `
+                        <div class="card-wrapper bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-all">
+                            <!-- Main Visible Area -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
+                                ${mainFieldsHtml}
+                            </div>
+                            
+                            <!-- Hidden Expanded Area -->
+                            ${expandedFieldsHtml ? `
+                                <div class="expanded-section hidden">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 mt-6 pt-6 border-t border-slate-100">
+                                        ${expandedFieldsHtml}
+                                    </div>
+                                </div>
+                                <button class="toggle-expand-btn w-full mt-4 py-2 text-sm font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                    Show More &darr;
+                                </button>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+            }
+
+            cardContainer.innerHTML = html;
+
+            // Update Pagination UI
+            document.getElementById('pageInfo').textContent = totalRows === 0 ? "0" : `${startIdx + 1} - ${endIdx}`;
+            document.getElementById('totalInfo').textContent = totalRows.toLocaleString();
+            document.getElementById('currentPageNum').textContent = appState.currentPage;
+            document.getElementById('totalPagesNum').textContent = totalPages;
+
+            document.getElementById('btnPrev').disabled = appState.currentPage === 1;
+            document.getElementById('btnNext').disabled = appState.currentPage === totalPages || totalPages === 0;
+        }
+
+        // Utility: Format Header Name based on language and apply Camel Case spacing
+        function formatHeaderName(header, lang) {
+            let clean = header.replace(/EN$/, '').replace(/FR$/, '');
+
+            // Handle NSERC specific bilingual headers separated by hyphen (e.g. Name-Nom)
+            if (clean.includes('-')) {
+                const parts = clean.split('-');
+                if (parts.length === 2) {
+                    clean = lang === 'EN' ? parts[0] : parts[1];
+                }
+            }
+
+            // Insert space between a lowercase letter and an uppercase letter (e.g. CommitteeCode -> Committee Code)
+            return clean.replace(/([a-z])([A-Z])/g, '$1 $2');
+        }
+
+        // Utility: Format cell values (Currency formatting)
+        function formatCellValue(header, value) {
+            if (!value) return value;
+
+            // Check if this column represents an amount/currency
+            if (header.toLowerCase().includes('amount') || header.toLowerCase().includes('montant')) {
+                const cleanNum = String(value).replace(/[^0-9.-]+/g, ""); // Strip anything that isn't a number
+                const val = parseFloat(cleanNum);
+
+                if (!isNaN(val)) {
+                    return new Intl.NumberFormat('en-CA', {
+                        style: 'currency',
+                        currency: 'CAD',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0
+                    }).format(val);
+                }
+            }
+            return value;
+        }
+
+        // Utility: Escape HTML to prevent XSS and formatting issues
+        function escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // UI Helpers
+        function showLoading(text) {
+            if (text) document.getElementById('loadingText').textContent = text;
+            loading.classList.remove('hidden');
+            dropzone.classList.add('hidden');
+        }
+
+        function hideLoading() {
+            loading.classList.add('hidden');
+            if (appState.data.length === 0) {
+                dropzone.classList.remove('hidden');
+            }
+        }
+
+        function showNotice(msg) {
+            if (msg) {
+                noticeMessage.textContent = msg;
+                noticeBanner.classList.remove('hidden');
+            } else {
+                noticeBanner.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+
+</html>
